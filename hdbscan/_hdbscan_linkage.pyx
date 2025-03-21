@@ -11,6 +11,8 @@ from libc.float cimport DBL_MAX
 
 from hdbscan.dist_metrics cimport DistanceMetric
 
+cdef extern from "stdio.h":
+    int printf(const char *format, ...)
 
 cpdef np.ndarray[np.double_t, ndim=2] mst_linkage_core(
                                np.ndarray[np.double_t,
@@ -110,7 +112,8 @@ cpdef np.ndarray[np.double_t, ndim=2] mst_linkage_core_vector(
     current_core_distances = (<np.double_t *> core_distances.data)
 
     for i in range(1, dim):
-
+        if i%1000 == 0:
+            printf(b"%d/%d\n", i, <np.intp_t> dim)
         in_tree[current_node] = 1
 
         current_node_core_distance = current_core_distances[current_node]
@@ -224,7 +227,8 @@ cpdef np.ndarray[np.double_t, ndim=2] label(np.ndarray[np.double_t, ndim=2] L):
     U = UnionFind(N)
 
     for index in range(L.shape[0]):
-
+        if index % 1000 == 0:
+            printf(b"%d/%d\n", index, <np.intp_t> L.shape[0])
         a = <np.intp_t> L[index, 0]
         b = <np.intp_t> L[index, 1]
         delta = L[index, 2]

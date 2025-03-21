@@ -6,6 +6,8 @@ HDBSCAN: Hierarchical Density-Based Spatial Clustering
 
 import numpy as np
 
+from datetime import datetime
+
 from sklearn.base import BaseEstimator, ClusterMixin
 from sklearn.metrics import pairwise_distances
 from scipy.sparse import issparse
@@ -62,6 +64,8 @@ FAST_METRICS = KDTREE_VALID_METRICS + BALLTREE_VALID_METRICS + ["cosine", "arcco
 # License: BSD 3 clause
 from numpy import isclose
 
+def print_with_date(string):
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {string}")
 
 def _tree_to_labels(
     X,
@@ -78,10 +82,17 @@ def _tree_to_labels(
     """Converts a pretrained tree and cluster size into a
     set of labels and probabilities.
     """
+    print_with_date("Starting condensing")
     condensed_tree = condense_tree(single_linkage_tree, min_cluster_size)
+    print_with_date("Condensing has been done")
     if cluster_selection_persistence > 0.0:
         condensed_tree = simplify_hierarchy(condensed_tree, cluster_selection_persistence)
+
+    print_with_date("Computing stability of clusters")
     stability_dict = compute_stability(condensed_tree)
+    print_with_date("Stability of clusters has been computed")
+
+    print_with_date("Picking stable clusters")
     labels, probabilities, stabilities = get_clusters(
         condensed_tree,
         stability_dict,
@@ -92,6 +103,7 @@ def _tree_to_labels(
         max_cluster_size,
         cluster_selection_epsilon_max,
     )
+    print_with_date("Picked stable clusters")
 
     return (labels, probabilities, stabilities, condensed_tree, single_linkage_tree)
 
@@ -250,6 +262,7 @@ def _hdbscan_prims_kdtree(
     gen_min_span_tree=False,
     **kwargs
 ):
+    print_with_date("calling prims KD tree")
     if X.dtype != np.float64:
         X = X.astype(np.float64)
 
@@ -257,24 +270,34 @@ def _hdbscan_prims_kdtree(
     if not X.flags["C_CONTIGUOUS"]:
         X = np.array(X, dtype=np.double, order="C")
 
+    print_with_date("Constructing KD tree using sklearn")
     tree = KDTree(X, metric=metric, leaf_size=leaf_size, **kwargs)
+    print_with_date("KD tree has been constructed")
 
     # TO DO: Deal with p for minkowski appropriately
     dist_metric = DistanceMetric.get_metric(metric, **kwargs)
 
     # Get distance to kth nearest neighbour
+    print_with_date("Getting core distances")
     core_distances = tree.query(
         X, k=min_samples + 1, dualtree=True, breadth_first=True
     )[0][:, -1].copy(order="C")
+    print_with_date("Got core distances")
 
+    print_with_date("Constructing MST")
     # Mutual reachability distance is implicit in mst_linkage_core_vector
     min_spanning_tree = mst_linkage_core_vector(X, core_distances, dist_metric, alpha)
+    print_with_date("MST has been constructed")
 
+    print_with_date("Sorting MST")
     # Sort edges of the min_spanning_tree by weight
     min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]), :]
+    print_with_date("MST has been sorted")
 
+    print_with_date("Constructing single_linkage_tree")
     # Convert edge list into standard hierarchical clustering format
     single_linkage_tree = label(min_spanning_tree)
+    print_with_date("single_linkage_tree has been constructed")
 
     if gen_min_span_tree:
         return single_linkage_tree, min_spanning_tree
@@ -292,6 +315,7 @@ def _hdbscan_prims_balltree(
     gen_min_span_tree=False,
     **kwargs
 ):
+    print_with_date("calling prims ball tree")
     if X.dtype != np.float64:
         X = X.astype(np.float64)
 
@@ -333,6 +357,7 @@ def _hdbscan_boruvka_kdtree(
     core_dist_n_jobs=4,
     **kwargs
 ):
+    print_with_date("calling boruvka KD tree")
     if leaf_size < 3:
         leaf_size = 3
 
@@ -377,6 +402,7 @@ def _hdbscan_boruvka_balltree(
     core_dist_n_jobs=4,
     **kwargs
 ):
+    print_with_date("calling boruvka ball tree")
     if leaf_size < 3:
         leaf_size = 3
 
@@ -386,7 +412,11 @@ def _hdbscan_boruvka_balltree(
     if X.dtype != np.float64:
         X = X.astype(np.float64)
 
+    print_with_date("Constructing ball tree using sklearn")
     tree = BallTree(X, metric=metric, leaf_size=leaf_size, **kwargs)
+    print_with_date("ball tree has been constructed")
+
+    print_with_date("Constructing MST")
     alg = BallTreeBoruvkaAlgorithm(
         tree,
         min_samples,
@@ -397,10 +427,18 @@ def _hdbscan_boruvka_balltree(
         **kwargs
     )
     min_spanning_tree = alg.spanning_tree()
+    print_with_date("MST has been constructed")
+
+    print_with_date("Sorting MST")
     # Sort edges of the min_spanning_tree by weight
     min_spanning_tree = min_spanning_tree[np.argsort(min_spanning_tree.T[2]), :]
+    print_with_date("MST has been sorted")
+    # Convert edge list into standard hierarchical clustering format
+
+    print_with_date("Constructing single_linkage_tree")
     # Convert edge list into standard hierarchical clustering format
     single_linkage_tree = label(min_spanning_tree)
+    print_with_date("single_linkage_tree has been constructed")
 
     if gen_min_span_tree:
         return single_linkage_tree, min_spanning_tree
@@ -1233,11 +1271,13 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
             self._raw_data = X
 
             self._all_finite = is_finite(X)
+            print_with_date(f"all_are_finite: {self._all_finite}")
             if ~self._all_finite:
                 # Pass only the purely finite indices into hdbscan
                 # We will later assign all non-finite points to the background -1 cluster
                 finite_index = get_finite_row_indices(X)
                 clean_data = X[finite_index]
+                print
                 internal_to_raw = {
                     x: y for x, y in zip(range(len(finite_index)), finite_index)
                 }
@@ -1255,12 +1295,14 @@ class HDBSCAN(BaseEstimator, ClusterMixin):
             clean_data = X
 
         kwargs = self.get_params()
+        print_with_date("calling model with following params : ", kwargs)
         # prediction data only applies to the persistent model, so remove
         # it from the keyword args we pass on the the function
         kwargs.pop("prediction_data", None)
         kwargs.pop("branch_detection_data", None)
         kwargs.update(self._metric_kwargs)
         kwargs['gen_min_span_tree'] |= self.branch_detection_data
+        print_with_date(kwargs)
 
         (
             self.labels_,

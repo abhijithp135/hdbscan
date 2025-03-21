@@ -72,6 +72,9 @@ from joblib import Parallel, delayed
 
 cdef np.double_t INF = np.inf
 
+cdef extern from "stdio.h":
+    int printf(const char *format, ...)
+
 
 # Define the NodeData struct used in sklearn trees for faster
 # access to the node data internals in Cython.
@@ -1451,6 +1454,7 @@ cdef class BallTreeBoruvkaAlgorithm (object):
         num_components = self.tree.data.shape[0]
         num_nodes = self.tree.node_data.shape[0]
         while num_components > 1:
+            printf(b"%d/%d left\n", <np.intp_t> num_components, <np.intp_t> self.tree.data.shape[0])
             self.dual_tree_traversal(0, 0)
             num_components = self.update_components()
 
